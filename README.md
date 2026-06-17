@@ -5,16 +5,21 @@ Reproduces the bug: Maven cannot authenticate against Artifact Keeper when `AK_G
 ## Quick Start
 
 ```bash
+git clone https://github.com/mymarche/ak-maven-auth-repro.git
+cd ak-maven-auth-repro
 docker compose up --wait
 
-# Initialize: create test-maven repo + upload test artifact
-./setup.sh
-
-# Run tests
-./test.sh
+# Tests run automatically — check results:
+docker compose logs maven-test
 ```
 
 ## How It Works
+
+The compose stack starts 4 containers:
+1. `postgres` — database
+2. `backend` — Artifact Keeper with `AK_GUEST_ACCESS_ENABLED=false`
+3. `setup` — runs `setup.sh`: creates test-maven repo + uploads a dummy artifact, then waits
+4. `maven-test` — runs `test.sh` automatically once setup is healthy, then exits
 
 `test.sh` runs two tests:
 
@@ -52,17 +57,17 @@ The fix is in `.mvn/maven.config`:
 ## Commands
 
 ```bash
-# Follow backend logs only
+# Follow backend logs
 docker compose logs -f backend
 
-# Full reset
+# Check test results
+docker compose logs maven-test
+
+# Full reset (fresh DB, fresh tests)
 docker compose down -v && docker compose up --wait
 
-# Run tests only (without recreating)
-./test.sh
-
-# Complete restart
-docker compose down -v && docker compose up --wait && ./setup.sh && ./test.sh
+# Rerun tests only (without recreating the stack)
+docker compose run --rm maven-test
 ```
 
 ## File Structure
