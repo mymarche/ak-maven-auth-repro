@@ -1,0 +1,74 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: registry
+      POSTGRES_PASSWORD: registry
+      POSTGRES_DB: artifact_registry
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U registry -d artifact_registry"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "15432:5432"
+
+  backend:
+    image: ghcr.io/artifact-keeper/artifact-keeper-backend:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://registry:registry@postgres:5432/artifact_registry
+      STORAGE_PATH: /data/storage
+      JWT_SECRET: reproduce-test-jwt-secret-2026
+      ADMIN_PASSWORD: reproduce-test-password
+      AK_GUEST_ACCESS_ENABLED: "false"
+      RUST_LOG: info
+      HOST: 0.0.0.0
+      PORT: 8080
+    ports:
+      - "18080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 5s
+      timeout: 10s
+      start_period: 30s
+      retries: 10
+
+  setup:
+    image: alpine:3.19
+    depends_on:
+      backend:
+        condition: service_healthy
+    volumes:
+      - ./setup.sh:/setup.sh:ro
+    command: ["sh", "/setup.sh"]
+    environment:
+      REGISTRY_URL: http://backend:8080
+      ADMIN_USER: admin
+      ADMIN_PASS: reproduce-test-password
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/.setup-done"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+
+  maven-test:
+    image: maven:3.9-eclipse-temurin-21
+    depends_on:
+      setup:
+        condition: service_healthy
+    volumes:
+      - ./test.sh:/test.sh:ro
+      - maven-cache:/root/.m2/repository
+    environment:
+      REGISTRY_URL: http://backend:8080
+      REGISTRY_USER: admin
+      REGISTRY_PASS: reproduce-test-password
+    entrypoint: ["/bin/bash", "/test.sh"]
+
+volumes:
+  maven-cache:
